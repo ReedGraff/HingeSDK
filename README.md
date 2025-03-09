@@ -23,12 +23,6 @@ Clone this repository to your local machine:
 git clone https://github.com/ReedGraff/HingeSDK.git
 ```
 
-Navigate to the project directory:
-
-```bash
-cd HingeAPI
-```
-
 ### Usage
 
 To use this library, you'll need to initialize the `HingeClient` with your authentication details. The client classes provided in this package include `HingeClient`, `HingeMediaClient`, and `HingeAPIClient`.
