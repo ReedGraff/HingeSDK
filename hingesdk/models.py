@@ -1,5 +1,11 @@
 from dataclasses import dataclass
 from typing import Optional, Dict, List
+from enum import Enum
+
+class ProfileSource(Enum):
+    """Enum for profile data sources"""
+    RECOMMENDATIONS = "recommendations"
+    STANDOUTS = "standouts"
 
 @dataclass
 class UserSettings:

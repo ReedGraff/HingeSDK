@@ -49,7 +49,7 @@ class HingeAPIClient(HingeClient):
             "rating": "note",
             "origin": origin,
             "hasPairing": has_pairing,
-            "created": datetime.utcnow().isoformat() + "Z",
+            "created": datetime.datetime.utcnow().isoformat() + "Z",
             "initiatedWith": initiated_with
         }
         
@@ -120,6 +120,34 @@ class HingeAPIClient(HingeClient):
         }
         
         response = self._request("POST", url, json=payload, headers=headers)
+        return response.json()
+
+    def get_standouts(self, additional_headers: Optional[Dict] = None) -> Dict:
+        """
+        Get standout profiles from Hinge.
+        
+        Args:
+            additional_headers: Optional additional headers to include in the request
+            
+        Returns:
+            Dict: JSON response containing standout profiles data including:
+                - status: Validation status
+                - expiration: When the standouts expire
+                - free: List of free standout profiles
+                - paid: List of paid standout profiles
+                
+        Raises:
+            HingeAPIError: If the request fails
+            HingeAuthError: If authentication fails
+        """
+        url = f"{self.BASE_URL}/standouts/v2"
+        
+        # Prepare headers
+        headers = {}
+        if additional_headers:
+            headers.update(additional_headers)
+        
+        response = self._request("GET", url, headers=headers)
         return response.json()
 
     def get_recommendations(self, 

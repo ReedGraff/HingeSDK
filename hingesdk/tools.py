@@ -4,6 +4,7 @@ from typing import Dict, List, Optional
 from .api import HingeAPIClient
 from .media import HingeMediaClient
 from .exceptions import HingeAPIError
+from .models import ProfileSource
 import logging
 
 class HingeTools:
@@ -22,6 +23,13 @@ class HingeTools:
         self.api_client = api_client
         self.media_client = media_client
         self.logger = logging.getLogger(__name__)
+        if not self.logger.handlers:
+            self.logger.setLevel(logging.INFO)
+            handler = logging.StreamHandler()
+            handler.setLevel(logging.INFO)
+            formatter = logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
 
     def download_recommendation_content(self,
         active_today: bool = False,
@@ -123,15 +131,19 @@ class HingeTools:
                 self.logger.error(f"Failed to download image {cdn_id} for user {user_id}: {str(e)}")
 
     def create_profile_json(self,
+        source: ProfileSource = ProfileSource.RECOMMENDATIONS,
         active_today: bool = False,
         new_here: bool = False,
         output_file: str = "hinge_profiles.json") -> None:
         """
-        Create a JSON file with user profiles from recommendations using question mappings.
+        Create a JSON file with user profiles from either recommendations or standouts using question mappings.
+        Includes rating tokens and interaction data for liking/commenting/messaging.
         
         Args:
-            active_today: Filter for active today users
-            new_here: Filter for new users
+            source: Data source (ProfileSource.RECOMMENDATIONS or ProfileSource.STANDOUTS, 
+                default: ProfileSource.RECOMMENDATIONS)
+            active_today: Filter for active today users (only for recommendations)
+            new_here: Filter for new users (only for recommendations)
             output_file: Path to save the JSON file
         """
         try:
@@ -150,25 +162,37 @@ class HingeTools:
                 for prompt in question_data.get("text", {}).get("prompts", [])
             }
             
-            # Get recommendations
-            self.logger.info("Fetching recommendations for profile JSON...")
-            recommendations = self.api_client.get_recommendations(
-                active_today=active_today,
-                new_here=new_here
-            )
-            
-            # Extract user IDs
+            # Get data based on source and store rating tokens
             user_ids = []
-            for feed in recommendations.get("feeds", []):
-                for subject in feed.get("subjects", []):
-                    user_ids.append(subject["subjectId"])
+            rating_tokens = {}  # Dictionary to store rating tokens by user_id
+            
+            if source == ProfileSource.STANDOUTS:
+                self.logger.info("Fetching standouts for profile JSON...")
+                standouts = self.api_client.get_standouts()
+                # Extract user IDs and rating tokens from standouts
+                for standout in standouts.get("free", []) + standouts.get("paid", []):
+                    user_id = standout["subjectId"]
+                    user_ids.append(user_id)
+                    rating_tokens[user_id] = standout["ratingToken"]
+            else:  # ProfileSource.RECOMMENDATIONS
+                self.logger.info("Fetching recommendations for profile JSON...")
+                recommendations = self.api_client.get_recommendations(
+                    active_today=active_today,
+                    new_here=new_here
+                )
+                # Extract user IDs and rating tokens from recommendations
+                for feed in recommendations.get("feeds", []):
+                    for subject in feed.get("subjects", []):
+                        user_id = subject["subjectId"]
+                        user_ids.append(user_id)
+                        rating_tokens[user_id] = subject["ratingToken"]
             
             if not user_ids:
-                self.logger.warning("No user IDs found in recommendations")
+                self.logger.warning(f"No user IDs found in {source.value}")
                 return
             
             # Get profiles
-            self.logger.info(f"Fetching profiles for {len(user_ids)} users...")
+            self.logger.info(f"Fetching profiles for {len(user_ids)} users from {source.value}...")
             profiles = self.api_client.get_public_users(user_ids)
             
             # Structure the data
@@ -183,32 +207,43 @@ class HingeTools:
                     if k not in ["answers", "photos"]
                 }
                 
-                # Extract prompts with question text
+                # Extract prompts with question text and additional metadata
                 prompts = [
                     {
                         "question": question_map.get(answer["questionId"], "Unknown Question"),
-                        "response": answer["response"]
+                        "response": answer["response"],
+                        "question_id": answer["questionId"]  # Useful for prompt responses when liking
                     }
                     for answer in profile_data.get("answers", [])
                 ]
                 
-                # Extract image URLs
+                # Extract image details with additional metadata
                 images = [
-                    photo["url"]
+                    {
+                        "url": photo["url"],
+                        "cdn_id": photo.get("cdnId"),  # Useful for referencing specific photos
+                        "content_id": photo.get("contentId")  # Useful for referencing in likes
+                    }
                     for photo in profile_data.get("photos", [])
                 ]
                 
+                # Compile all interaction-relevant data
                 output_data[user_id] = {
                     "profile_info": profile_info,
                     "prompts": prompts,
-                    "images": images
+                    "images": images,
+                    "interaction_data": {
+                        "subject_id": user_id,  # For liking/messaging
+                        "rating_token": rating_tokens.get(user_id),  # For liking
+                        "source": source.value  # Track where this profile came from
+                    }
                 }
             
             # Write to JSON file
             output_path = os.path.join(os.getcwd(), output_file)
             with open(output_path, "w", encoding="utf-8") as f:
                 json.dump(output_data, f, indent=2)
-            self.logger.info(f"Profile data saved to {output_path}")
+            self.logger.info(f"Profile data from {source.value} saved to {output_path}")
             
         except HingeAPIError as e:
             self.logger.error(f"API error occurred: {str(e)}")
