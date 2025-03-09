@@ -1,6 +1,6 @@
 # HingeSDK
 
-HingeAPI is a Python library designed to interact with the Hinge app's API, allowing you to perform various operations such as sending messages, fetching user recommendations, and downloading media content.
+HingeSDK is a Python library designed to interact with the Hinge app's API, allowing you to perform various operations such as sending messages, fetching user recommendations, and downloading media content.
 
 ## Getting Started
 
