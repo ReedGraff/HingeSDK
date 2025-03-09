@@ -20,7 +20,7 @@ pip install requests
 Clone this repository to your local machine:
 
 ```bash
-git clone <repository-url>
+git clone [<repository-url>](https://github.com/ReedGraff/HingeSDK.git)
 ```
 
 Navigate to the project directory:
