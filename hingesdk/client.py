@@ -1,3 +1,4 @@
+import uuid
 import requests
 from typing import Dict, Optional
 from .exceptions import HingeAPIError, HingeAuthError, HingeRequestError
@@ -61,9 +62,13 @@ class HingeClient:
 
     def _request(self, method: str, url: str, **kwargs) -> requests.Response:
         """Internal request handler with error checking"""
-        headers = kwargs.get("headers", {})
+        headers = kwargs.get("headers", {}).copy()
         headers.update(self.default_headers)
         kwargs["headers"] = headers
+        
+        print(f"Request: {method} {url}")
+        print(f"Headers: {headers}")
+        print(f"Body: {kwargs.get('json') or kwargs.get('data')}")
         
         try:
             response = self.session.request(method, url, **kwargs)
@@ -161,7 +166,11 @@ class HingeClient:
             raise HingeAPIError("Failed to retrieve authentication token", {
                 "response": verify_data
             })
-            
+                
+        if not session_id:
+            session_id = str(uuid.uuid4())
+            print(f"Generated Session ID: {session_id}")
+
         # Return fully authenticated client
         return cls(
             auth_token=auth_token,

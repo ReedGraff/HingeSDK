@@ -176,6 +176,9 @@ cython_debug/
 # Local shit
 HTTPToolkit_2025-03-08_20-28.har
 HTTPToolkit_login.har
+HTTPToolkit_create_account.har
+HTTPToolkit_login_with_google.har
+login_test.py
 hinge_profiles.json
 runner.py
 standouts.json
