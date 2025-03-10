@@ -175,6 +175,7 @@ cython_debug/
 
 # Local shit
 HTTPToolkit_2025-03-08_20-28.har
+HTTPToolkit_login.har
 hinge_profiles.json
 runner.py
 standouts.json

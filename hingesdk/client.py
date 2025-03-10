@@ -9,7 +9,7 @@ class HingeClient:
     MEDIA_URL = "https://media.hingenexus.com"
     
     def __init__(self, 
-                 auth_token: str,
+                 auth_token: Optional[str] = None,
                  app_version: str = "9.68.0",
                  os_version: str = "14",
                  device_model: str = "Pixel 6a",
@@ -46,7 +46,6 @@ class HingeClient:
             "x-device-platform": "android",
             "x-install-id": install_id,
             "x-device-id": device_id,
-            "authorization": f"Bearer {auth_token}",
             "accept-language": "en-US",
             "x-device-region": "US",
             "host": "prod-api.hingeaws.net",
@@ -55,6 +54,8 @@ class HingeClient:
             "user-agent": "okhttp/4.12.0"
         }
         
+        if auth_token:
+            self.default_headers["authorization"] = f"Bearer {auth_token}"
         if session_id:
             self.default_headers["x-session-id"] = session_id
 
@@ -91,3 +92,81 @@ class HingeClient:
                 'url': url,
                 'method': method
             })
+
+    @classmethod
+    def login_with_sms(cls, phone_number: str, device_id: str, install_id: str) -> 'HingeClient':
+        """
+        Perform SMS login and return an authenticated client instance.
+        
+        Args:
+            phone_number: Phone number in international format (e.g., "+12345678901")
+            device_id: Unique device identifier
+            install_id: Installation identifier
+            
+        Returns:
+            HingeClient: Authenticated client instance
+            
+        Raises:
+            HingeAPIError: If the login process fails
+        """
+        # Create temporary client for authentication
+        temp_client = cls(device_id=device_id, install_id=install_id)
+        
+        # Step 1: Initiate SMS authentication
+        initiate_url = f"{cls.BASE_URL}/auth/sms/v2/initiate"
+        payload = {
+            "phoneNumber": phone_number,
+            "deviceId": device_id
+        }
+        headers = {"content-type": "application/json; charset=UTF-8"}
+        
+        response = temp_client._request("POST", initiate_url, json=payload, headers=headers)
+        print(f"Initiate response status: {response.status_code}")
+        print(f"Initiate response text: '{response.text}'")
+        
+        # Since response is empty (likely 204 No Content), we don’t expect a verificationId
+        # Proceed directly to verification assuming the SMS code is sufficient
+        
+        # Step 2: Prompt user for SMS code
+        sms_code = input("Enter the SMS code received: ")
+        
+        # Step 3: Verify SMS code
+        verify_url = f"{cls.BASE_URL}/auth/sms/v2"
+        verify_payload = {
+            "deviceId": device_id,
+            "installId": install_id,
+            "phoneNumber": phone_number,
+            "otp": sms_code
+        }
+        verify_response = temp_client._request("POST", verify_url, json=verify_payload, headers=headers)
+        try:
+            verify_data = verify_response.json()
+        except requests.exceptions.JSONDecodeError:
+            raise HingeAPIError("Failed to parse verification response", {
+                "status_code": verify_response.status_code,
+                "response_text": verify_response.text
+            })
+        
+        # Extract bearer token and other details
+        auth_token = verify_data.get("token")
+        user_id = verify_data.get("playerId")
+        session_id = verify_data.get("sessionId")
+        
+        print(f"Verification response: {verify_data}")
+        print(f"Token: {auth_token}")
+        print(f"User ID: {user_id}")
+        print(f"Session ID: {session_id}")
+        
+        if not auth_token:
+            raise HingeAPIError("Failed to retrieve authentication token", {
+                "response": verify_data
+            })
+            
+        # Return fully authenticated client
+        return cls(
+            auth_token=auth_token,
+            device_id=device_id,
+            install_id=install_id,
+            user_id=user_id,
+            session_id=session_id
+        )

@@ -23,11 +23,20 @@ Clone this repository to your local machine:
 git clone <repository-url>
 ```
 
-Navigate to the project directory:
+### Getting your session ID and user ID and JWT token
 
-```bash
-cd HingeAPI
+You can do this by running the following:
+```python
+from hingesdk.client import HingeClient
+
+client = HingeClient.login_with_sms(
+    phone_number="+1xxxxxxxxxx",
+    device_id="YOURDEVICEID", # I'm not sure if these are important to be correct...
+    install_id="YOURINSTALLID" # I'm not sure if these are important to be correct...
+)
 ```
+
+Then use the output from the function to plugin throughout the rest of the code as needed... (AKA to initialize the `HingeAPIClient` and `HingeMediaClient`).
 
 ### Usage
 
