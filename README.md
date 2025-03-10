@@ -26,7 +26,7 @@ git clone <repository-url>
 Navigate to the project directory:
 
 ```bash
-cd HingeSDK
+cd HingeAPI
 ```
 
 ### Usage
