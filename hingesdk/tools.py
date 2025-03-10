@@ -1,5 +1,7 @@
 import os
 import json
+import time
+import random
 from typing import Dict, List, Optional
 from .api import HingeAPIClient
 from .media import HingeMediaClient
@@ -206,23 +208,34 @@ class HingeTools:
                     k: v for k, v in profile_data.items()
                     if k not in ["answers", "photos"]
                 }
-                
-                # Extract prompts with question text and additional metadata
-                prompts = [
-                    {
+
+                # Extract prompts with question text and handle both text and voice responses
+                prompts = []
+                for answer in profile_data.get("answers", []):
+                    prompt_data = {
                         "question": question_map.get(answer["questionId"], "Unknown Question"),
-                        "response": answer["response"],
-                        "question_id": answer["questionId"]  # Useful for prompt responses when liking
+                        "question_id": answer["questionId"],
+                        "type": answer.get("type", "text")  # Default to "text" if type not specified
                     }
-                    for answer in profile_data.get("answers", [])
-                ]
+                    
+                    if prompt_data["type"] == "voice":
+                        # Handle voice responses
+                        transcription = answer.get("transcription", {})
+                        prompt_data["response"] = transcription.get("transcript", "")
+                        prompt_data["voice_url"] = answer.get("url")
+                        prompt_data["waveform"] = answer.get("waveform")
+                    else:
+                        # Handle text responses
+                        prompt_data["response"] = answer.get("response", "")
+
+                    prompts.append(prompt_data)
                 
                 # Extract image details with additional metadata
                 images = [
                     {
                         "url": photo["url"],
-                        "cdn_id": photo.get("cdnId"),  # Useful for referencing specific photos
-                        "content_id": photo.get("contentId")  # Useful for referencing in likes
+                        "cdn_id": photo.get("cdnId"),
+                        "content_id": photo.get("contentId")
                     }
                     for photo in profile_data.get("photos", [])
                 ]
@@ -233,9 +246,9 @@ class HingeTools:
                     "prompts": prompts,
                     "images": images,
                     "interaction_data": {
-                        "subject_id": user_id,  # For liking/messaging
-                        "rating_token": rating_tokens.get(user_id),  # For liking
-                        "source": source.value  # Track where this profile came from
+                        "subject_id": user_id,
+                        "rating_token": rating_tokens.get(user_id),
+                        "source": source.value
                     }
                 }
             
@@ -245,6 +258,124 @@ class HingeTools:
                 json.dump(output_data, f, indent=2)
             self.logger.info(f"Profile data from {source.value} saved to {output_path}")
             
+        except HingeAPIError as e:
+            self.logger.error(f"API error occurred: {str(e)}")
+            raise
+        except FileNotFoundError as e:
+            self.logger.error(str(e))
+            raise
+        except Exception as e:
+            self.logger.error(f"Unexpected error occurred: {str(e)}")
+            raise
+
+    def scrape_recommendations_multiple(self,
+        iterations: int = 40,
+        output_file: str = "all_recommendations.json",
+        min_sleep: float = 5.0,
+        max_sleep: float = 15.0,
+        active_today: bool = False,
+        new_here: bool = False) -> None:
+        """
+        Scrape recommendations multiple times, appending unique profiles to a JSON file.
+        Logs duplicate vs unique counts and includes randomized sleep intervals.
+        
+        Args:
+            iterations: Number of times to scrape recommendations (default: 40, as I've found this to be the limit before you don't get unique options anymore)
+            output_file: Path to save/append the JSON file
+            min_sleep: Minimum sleep time in seconds between scrapes
+            max_sleep: Maximum sleep time in seconds between scrapes
+            active_today: Filter for active today users
+            new_here: Filter for new users
+        """
+        try:
+            # Load existing data if file exists
+            output_path = os.path.join(os.getcwd(), output_file)
+            if os.path.exists(output_path):
+                with open(output_path, "r", encoding="utf-8") as f:
+                    existing_data = json.load(f)
+            else:
+                existing_data = {}
+
+            # Load question mappings
+            mapping_path = os.path.join(os.path.dirname(__file__), "assets/prompts.json")
+            if not os.path.exists(mapping_path):
+                self.logger.error(f"Question mapping file not found: {mapping_path}")
+                raise FileNotFoundError(f"Question mapping file not found: {mapping_path}")
+            with open(mapping_path, "r", encoding="utf-8") as f:
+                question_data = json.load(f)
+            question_map = {prompt["id"]: prompt["prompt"] for prompt in question_data.get("text", {}).get("prompts", [])}
+
+            # Scrape iterations
+            for i in range(iterations):
+                self.logger.info(f"Starting scrape iteration {i + 1}/{iterations}...")
+                
+                # Fetch recommendations
+                recommendations = self.api_client.get_recommendations(
+                    active_today=active_today,
+                    new_here=new_here
+                )
+                user_ids = []
+                rating_tokens = {}
+                for feed in recommendations.get("feeds", []):
+                    for subject in feed.get("subjects", []):
+                        user_id = subject["subjectId"]
+                        user_ids.append(user_id)
+                        rating_tokens[user_id] = subject["ratingToken"]
+
+                if not user_ids:
+                    self.logger.warning("No user IDs found in this iteration")
+                    continue
+
+                # Fetch profiles
+                self.logger.info(f"Fetching profiles for {len(user_ids)} users...")
+                profiles = self.api_client.get_public_users(user_ids)
+
+                # Process profiles and track unique vs duplicates
+                new_profiles = 0
+                duplicate_profiles = 0
+                for profile in profiles:
+                    user_id = profile["identityId"]
+                    if user_id in existing_data:
+                        duplicate_profiles += 1
+                        continue  # Skip duplicates
+                    
+                    new_profiles += 1
+                    profile_data = profile.get("profile", {})
+                    profile_info = {k: v for k, v in profile_data.items() if k not in ["answers", "photos"]}
+                    prompts = []
+                    for answer in profile_data.get("answers", []):
+                        prompt_data = {"question": question_map.get(answer["questionId"], "Unknown Question"), "question_id": answer["questionId"], "type": answer.get("type", "text")}
+                        if prompt_data["type"] == "voice":
+                            transcription = answer.get("transcription", {})
+                            prompt_data["response"] = transcription.get("transcript", "")
+                            prompt_data["voice_url"] = answer.get("url")
+                            prompt_data["waveform"] = answer.get("waveform")
+                        else:
+                            prompt_data["response"] = answer.get("response", "")
+                        prompts.append(prompt_data)
+                    images = [{"url": photo["url"], "cdn_id": photo.get("cdnId"), "content_id": photo.get("contentId")} for photo in profile_data.get("photos", [])]
+                    existing_data[user_id] = {
+                        "profile_info": profile_info,
+                        "prompts": prompts,
+                        "images": images,
+                        "interaction_data": {"subject_id": user_id, "rating_token": rating_tokens.get(user_id), "source": "recommendations"}
+                    }
+
+                # Log results
+                self.logger.info(f"Iteration {i + 1}: Added {new_profiles} unique profiles, skipped {duplicate_profiles} duplicates. Total profiles: {len(existing_data)}")
+
+                # Write updated data to file
+                with open(output_path, "w", encoding="utf-8") as f:
+                    json.dump(existing_data, f, indent=2)
+
+                # Sleep if not the last iteration
+                if i < iterations - 1:
+                    sleep_time = random.uniform(min_sleep, max_sleep)
+                    self.logger.info(f"Sleeping for {sleep_time:.2f} seconds before next scrape...")
+                    time.sleep(sleep_time)
+
+            self.logger.info(f"Completed {iterations} scrapes. Final data saved to {output_path} with {len(existing_data)} unique profiles.")
+
         except HingeAPIError as e:
             self.logger.error(f"API error occurred: {str(e)}")
             raise
