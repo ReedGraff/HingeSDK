@@ -1,6 +1,6 @@
-# HingeAPI
+# HingeSDK
 
-HingeAPI is a Python library designed to interact with the Hinge app's API, allowing you to perform various operations such as sending messages, fetching user recommendations, and downloading media content.
+HingeSDK is a Python library designed to interact with the Hinge app's API, allowing you to perform various operations such as sending messages, fetching user recommendations, and downloading media content.
 
 ## Getting Started
 
@@ -26,7 +26,7 @@ git clone <repository-url>
 Navigate to the project directory:
 
 ```bash
-cd HingeAPI
+cd HingeSDK
 ```
 
 ### Usage
@@ -36,7 +36,7 @@ To use this library, you'll need to initialize the `HingeClient` with your authe
 #### Example: Sending a Message
 
 ```python
-from hingeapi.client import HingeAPIClient
+from hingesdk.client import HingeAPIClient
 
 auth_token = 'your_auth_token'
 user_id = 'your_user_id'
@@ -52,7 +52,7 @@ print(response)
 #### Example: Fetching User Recommendations
 
 ```python
-from hingeapi.api import HingeAPIClient
+from hingesdk.api import HingeAPIClient
 
 client = HingeAPIClient(auth_token=auth_token, user_id=user_id)
 recommendations = client.get_recommendations()
@@ -62,9 +62,9 @@ print(recommendations)
 #### Example: Downloading User Images
 
 ```python
-from hingeapi.tools import HingeTools
-from hingeapi.api import HingeAPIClient
-from hingeapi.media import HingeMediaClient
+from hingesdk.tools import HingeTools
+from hingesdk.api import HingeAPIClient
+from hingesdk.media import HingeMediaClient
 
 api_client = HingeAPIClient(auth_token=auth_token, user_id=user_id)
 media_client = HingeMediaClient(auth_token=auth_token)
@@ -78,9 +78,9 @@ tools.download_recommendation_content(output_path='path_to_save_images')
 ```python
 import os
 import json
-from hingeapi.tools import HingeTools
-from hingeapi.api import HingeAPIClient
-from hingeapi.media import HingeMediaClient
+from hingesdk.tools import HingeTools
+from hingesdk.api import HingeAPIClient
+from hingesdk.media import HingeMediaClient
 
 auth_token = os.getenv("BEARER_TOKEN")
 session_id = os.getenv("SESSION_ID")
