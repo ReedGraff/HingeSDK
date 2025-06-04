@@ -2,7 +2,7 @@ import os
 import json
 import time
 import random
-from typing import Dict, List, Optional
+from typing import Dict
 from .api import HingeAPIClient
 from .media import HingeMediaClient
 from .exceptions import HingeAPIError

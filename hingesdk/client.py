@@ -1,6 +1,6 @@
 import uuid
 import requests
-from typing import Dict, Optional
+from typing import Optional
 from .exceptions import HingeAPIError, HingeAuthError, HingeRequestError
 
 
