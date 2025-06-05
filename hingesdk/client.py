@@ -1,4 +1,5 @@
 import uuid
+import logging
 import requests
 from typing import Optional
 from .exceptions import HingeAPIError, HingeAuthError, HingeRequestError
@@ -36,6 +37,16 @@ class HingeClient:
             user_id: User identifier. AKA player_id (optional)
             session_id: Session identifier (optional)
         """
+        self.logger = logging.getLogger(__name__)
+
+        if not self.logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+            )
+            handler.setFormatter(formatter)
+            self.logger.addHandler(handler)
+
         self.session = requests.Session()
         self.auth_token = auth_token
         self.session_id = session_id
@@ -65,32 +76,35 @@ class HingeClient:
         if session_id:
             self.default_headers["x-session-id"] = session_id
 
+        self.logger.debug("Initialized HingeClient with device ID: %s", device_id)
+
     def _request(self, method: str, url: str, **kwargs) -> requests.Response:
         """Internal request handler with error checking"""
         headers = kwargs.get("headers", {}).copy()
         headers.update(self.default_headers)
         kwargs["headers"] = headers
 
-        print(f"Request: {method} {url}")
-        print(f"Headers: {headers}")
-        print(f"Body: {kwargs.get('json') or kwargs.get('data')}")
+        self.logger.debug("Sending %s request to URL: %s", method, url)
+        self.logger.debug("Request headers: %s", headers)
+        self.logger.debug("Request body: %s", kwargs.get("json") or kwargs.get("data"))
 
         try:
             response = self.session.request(method, url, **kwargs)
             response.raise_for_status()
+            self.logger.debug("Response status: %s", response.status_code)
             return response
         except requests.exceptions.HTTPError as e:
+            self.logger.error("HTTP error occurred: %s", str(e))
             error = HingeRequestError(
                 status_code=e.response.status_code,
                 message=str(e),
                 response_body=e.response.text,
             )
-            # Add additional context to the error
             error.details["endpoint"] = url
             error.details["request_headers"] = {
                 k: v
                 for k, v in kwargs["headers"].items()
-                if k.lower() not in ["authorization"]
+                if k.lower() != "authorization"
             }
             error.details["request_body"] = kwargs.get("json") or kwargs.get("data")
 
@@ -100,6 +114,7 @@ class HingeClient:
                 raise HingeAuthError("Precondition failed", error.details)
             raise error
         except requests.exceptions.RequestException as e:
+            self.logger.exception("Non-HTTP request error occurred")
             raise HingeAPIError(
                 f"Request failed: {str(e)}",
                 {"exception_type": type(e).__name__, "url": url, "method": method},
@@ -123,10 +138,21 @@ class HingeClient:
         Raises:
             HingeAPIError: If the login process fails
         """
-        # Create temporary client for authentication
+        logger = logging.getLogger(f"{__name__}")
+        logger.setLevel(logging.DEBUG)
+
+        if not logger.handlers:
+            handler = logging.StreamHandler()
+            formatter = logging.Formatter(
+                "%(asctime)s [%(levelname)s] %(name)s - %(message)s"
+            )
+            handler.setFormatter(formatter)
+            logger.addHandler(handler)
+
+        logger.info("Starting SMS login for phone: %s", phone_number)
+
         temp_client = cls(device_id=device_id, install_id=install_id)
 
-        # Step 1: Initiate SMS authentication
         initiate_url = f"{cls.BASE_URL}/auth/sms/v2/initiate"
         payload = {"phoneNumber": phone_number, "deviceId": device_id}
         headers = {"content-type": "application/json; charset=UTF-8"}
@@ -134,16 +160,11 @@ class HingeClient:
         response = temp_client._request(
             "POST", initiate_url, json=payload, headers=headers
         )
-        print(f"Initiate response status: {response.status_code}")
-        print(f"Initiate response text: '{response.text}'")
+        logger.info("SMS initiation response code: %d", response.status_code)
+        logger.debug("SMS initiation response text: '%s'", response.text)
 
-        # Since response is empty (likely 204 No Content), we don’t expect a verificationId
-        # Proceed directly to verification assuming the SMS code is sufficient
-
-        # Step 2: Prompt user for SMS code
         sms_code = input("Enter the SMS code received: ")
 
-        # Step 3: Verify SMS code
         verify_url = f"{cls.BASE_URL}/auth/sms/v2"
         verify_payload = {
             "deviceId": device_id,
@@ -151,12 +172,15 @@ class HingeClient:
             "phoneNumber": phone_number,
             "otp": sms_code,
         }
+
         verify_response = temp_client._request(
             "POST", verify_url, json=verify_payload, headers=headers
         )
+
         try:
             verify_data = verify_response.json()
         except requests.exceptions.JSONDecodeError:
+            logger.error("Failed to parse verification response")
             raise HingeAPIError(
                 "Failed to parse verification response",
                 {
@@ -164,8 +188,11 @@ class HingeClient:
                     "response_text": verify_response.text,
                 },
             )
-        # Check if response need extra email verification
-        if verify_data.status_code == 412 and "caseId" in verify_data.json():
+
+        if verify_response.status_code == 412 and "caseId" in verify_data:
+            logger.warning(
+                "Email verification required, case ID: %s", verify_data.get("caseId")
+            )
             raise HingeAuthError(
                 "Email verification required",
                 {
@@ -174,26 +201,27 @@ class HingeClient:
                 },
             )
 
-        # Extract bearer token and other details
         auth_token = verify_data.get("token")
         user_id = verify_data.get("playerId")
         session_id = verify_data.get("sessionId")
 
-        print(f"Verification response: {verify_data}")
-        print(f"Token: {auth_token}")
-        print(f"User ID: {user_id}")
-        print(f"Session ID: {session_id}")
+        logger.info("Verification successful. Token and session retrieved.")
+        logger.debug("Auth Token: %s", auth_token)
+        logger.debug("User ID: %s", user_id)
+        logger.debug("Session ID: %s", session_id)
 
         if not auth_token:
+            logger.error("No auth token received.")
             raise HingeAPIError(
                 "Failed to retrieve authentication token", {"response": verify_data}
             )
 
         if not session_id:
             session_id = str(uuid.uuid4())
-            print(f"Generated Session ID: {session_id}")
+            logger.warning(
+                "No session ID received; generated fallback session ID: %s", session_id
+            )
 
-        # Return fully authenticated client
         return cls(
             auth_token=auth_token,
             device_id=device_id,

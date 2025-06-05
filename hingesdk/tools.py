@@ -25,7 +25,6 @@ class HingeTools:
         self.media_client = media_client
         self.logger = logging.getLogger(__name__)
         if not self.logger.handlers:
-            self.logger.setLevel(logging.INFO)
             handler = logging.StreamHandler()
             handler.setLevel(logging.INFO)
             formatter = logging.Formatter(
@@ -39,6 +38,7 @@ class HingeTools:
         active_today: bool = False,
         new_here: bool = False,
         output_path: str = "output",
+        output_info: bool = False,
     ) -> Dict:
         """
         Get recommendations, fetch user content, and download all images.
@@ -81,6 +81,13 @@ class HingeTools:
                 self._download_user_images(
                     user_id, profile.get("profile", {}), output_path=output_path
                 )
+                # If output_info is True, also store the profile json
+                if output_info:
+                    user_folder = os.path.join(os.getcwd(), output_path, user_id)
+                    profile_path = os.path.join(user_folder, "profile.json")
+                    os.makedirs(user_folder, exist_ok=True)
+                    with open(profile_path, "w", encoding="utf-8") as f:
+                        json.dump(profile, f, indent=2)
 
             return {"recommendations": recommendations, "profiles": profiles}
 
