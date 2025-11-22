@@ -1,48 +1,86 @@
 # HingeSDK
 
-HingeSDK is a Python library designed to interact with the Hinge app's API, allowing you to perform various operations such as sending messages, fetching user recommendations, and downloading media content.
+Unofficial Python SDK for the Hinge API. Programmatically interact with Hinge to fetch recommendations, send messages, download media, and automate interactions.
 
-## Getting Started
+## Authentication & Environment Setup
 
-### Prerequisites
+To use this SDK, you need valid authentication credentials. You can store these in a `.env` file or pass them directly to the client.
 
-- Python 3.x
-- `requests` library
+### Required Variables
 
-You can install the required packages using pip:
+*   `BEARER_TOKEN`: Your JWT authentication token (e.g., `L2euNWN...`).
+*   `SESSION_ID`: The current session UUID.
+*   `USER_ID`: Your unique user/player ID.
 
-```bash
-pip install requests
-```
+### How to Get Credentials
 
-### Installation
+#### Method 1: Rooted Phone / Proxy (Recommended for Existing Accounts)
+If you want to use your existing Hinge account without risking flags from new device logins, you must extract these values from the app's network traffic.
 
-Clone this repository to your local machine:
+**Note:** You only need to do this **once** to obtain the correct variables. After capturing them, you can use the SMS Login method for future sessions.
 
-```bash
-git clone <repository-url>
-```
+1.  Use a rooted Android device or a standard proxy setup (e.g., with HTTP Toolkit or Charles Proxy) since Hinge does not use certificate pinning.
+2.  Inspect HTTPS requests to `prod-api.hingeaws.net` or similar Hinge endpoints.
+3.  Extract the following headers/values from the request or response bodies of profile endpoints:
+    *   `authorization` (Bearer token)
+    *   `x-session-id`
+    *   `x-device-id`
+    *   `x-install-id`
+    *   `User ID` (often in the response body as `subjectId` or similar)
 
-### Getting your session ID and user ID and JWT token
+#### Method 2: SMS Login (Experimental)
+You can generate new credentials by logging in via SMS through the SDK. This performs a fresh login flow.
 
-You can do this by running the following:
 ```python
 from hingesdk.client import HingeClient
 
+# These IDs must match the actual values associated with your account.
+# You cannot use random UUIDs; they must align with the account's registered device.
 client = HingeClient.login_with_sms(
-    phone_number="+1xxxxxxxxxx",
-    device_id="YOURDEVICEID", # I'm not sure if these are important to be correct...
-    install_id="YOURINSTALLID" # I'm not sure if these are important to be correct...
+    phone_number="+15551234567", 
+    device_id="your_device_id_uuid", 
+    install_id="your_install_id_uuid" 
 )
+
+print(f"BEARER_TOKEN={client.auth_token}")
+print(f"SESSION_ID={client.session_id}")
+print(f"USER_ID={client.user_id}")
 ```
 
-Then use the output from the function to plugin throughout the rest of the code as needed... (AKA to initialize the `HingeAPIClient` and `HingeMediaClient`).
+## Installation
 
-### Usage
+Clone the repository and install the package:
 
-To use this library, you'll need to initialize the `HingeClient` with your authentication details. The client classes provided in this package include `HingeClient`, `HingeMediaClient`, and `HingeAPIClient`.
+```bash
+git clone https://github.com/reedgraff/hingesdk
+cd hingesdk
+pip install .
+```
 
-#### Example: Sending a Message
+## Quick Start
+
+Here is a minimal example to authenticate and fetch user recommendations.
+
+```python
+import os
+from hingesdk.api import HingeAPIClient
+
+# Initialize with credentials
+client = HingeAPIClient(
+    auth_token=os.getenv("BEARER_TOKEN"),
+    session_id=os.getenv("SESSION_ID"),
+    user_id=os.getenv("USER_ID")
+)
+
+# Fetch recommendations
+recs = client.get_recommendations()
+print(f"Successfully fetched recommendations request.")
+```
+
+## Usage & Examples
+
+<details>
+<summary><b>Example: Sending a Message</b></summary>
 
 ```python
 from hingesdk.client import HingeAPIClient
@@ -57,8 +95,10 @@ response = client.send_message(
 )
 print(response)
 ```
+</details>
 
-#### Example: Fetching User Recommendations
+<details>
+<summary><b>Example: Fetching User Recommendations</b></summary>
 
 ```python
 from hingesdk.api import HingeAPIClient
@@ -67,8 +107,10 @@ client = HingeAPIClient(auth_token=auth_token, user_id=user_id)
 recommendations = client.get_recommendations()
 print(recommendations)
 ```
+</details>
 
-#### Example: Downloading User Images
+<details>
+<summary><b>Example: Downloading User Images</b></summary>
 
 ```python
 from hingesdk.tools import HingeTools
@@ -81,8 +123,10 @@ media_client = HingeMediaClient(auth_token=auth_token)
 tools = HingeTools(api_client, media_client)
 tools.download_recommendation_content(output_path='path_to_save_images')
 ```
+</details>
 
-#### Example: Getting User Info and Liking Profiles
+<details>
+<summary><b>Example: Getting User Info and Liking Profiles</b></summary>
 
 ```python
 import os
@@ -139,8 +183,12 @@ print(response)
 # )
 # print(response)
 ```
+</details>
 
-#### Example: Find people who have gone to good schools
+<details>
+<summary><b>Real World Example: University Finder (Filter Matches by Education)</b></summary>
+
+This example demonstrates how to scrape recommendations and filter profiles based on specific criteria (e.g., top universities).
 
 ```python
 def find_top_50_university_students(json_file_path, age_min=18, age_max=24):
@@ -338,29 +386,24 @@ def main():
 
     print(f"Results have been appended to {csv_file_path}")
 ```
+</details>
 
-## Available Classes and Functions
+## Project Structure
 
-- `HingeClient`: Base client handling HTTP requests and authentication.
-- `HingeAPIClient`: Interaction with the Hinge API for various operations, including sending messages and fetching recommendations.
-- `HingeMediaClient`: Operations for downloading and processing media content from Hinge.
-- `HingeTools`: Advanced operations using both API and media functionalities.
+The SDK is organized into logical modules to separate concerns.
 
-## Error Handling
-
-The library provides custom exceptions to handle various error scenarios:
-- `HingeAPIError`: General API errors.
-- `HingeAuthError`: Authentication-related errors.
-
-## Notes
-- Recomendations start not being unique after about 800 people... Then you need to skip or message anyone to start getting new recomendations I believe.
-<!--
+```
+hingesdk/
+├── __init__.py
+├── client.py       # Base HingeClient: Handles HTTP requests, headers, and Auth
+├── api.py          # HingeAPIClient: Core API methods (like, message, get_recs)
+├── media.py        # HingeMediaClient: Helpers for downloading/processing images
+├── tools.py        # HingeTools: High-level workflows (batch scraping, exports)
+├── models.py       # Pydantic models and data structures (if applicable)
+├── exceptions.py   # Custom exception classes (HingeAPIError, HingeAuthError)
+└── assets/         # Static resources (e.g., prompt definitions)
+```
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-Please read [CONTRIBUTING](CONTRIBUTING.md) for details on our code of conduct, and the process for submitting pull requests.
--->
+This project is licensed under the MIT License.
